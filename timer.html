@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>タイマー</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      background: #16213e;
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+      width: 360px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      color: #a0aec0;
+      margin-bottom: 30px;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+
+    .display {
+      font-size: 5rem;
+      font-weight: 200;
+      letter-spacing: 4px;
+      color: #e2e8f0;
+      margin: 20px 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .display.running { color: #68d391; }
+    .display.finished { color: #fc8181; }
+
+    .progress-ring {
+      position: relative;
+      width: 220px;
+      height: 220px;
+      margin: 0 auto 30px;
+    }
+
+    .progress-ring svg {
+      transform: rotate(-90deg);
+    }
+
+    .progress-ring .track {
+      fill: none;
+      stroke: #2d3748;
+      stroke-width: 8;
+    }
+
+    .progress-ring .bar {
+      fill: none;
+      stroke: #68d391;
+      stroke-width: 8;
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.5s linear, stroke 0.3s;
+    }
+
+    .progress-ring .bar.finished { stroke: #fc8181; }
+
+    .display-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .input-group {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 30px;
+    }
+
+    .input-group label {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.75rem;
+      color: #718096;
+      letter-spacing: 1px;
+    }
+
+    .input-group input {
+      width: 70px;
+      padding: 10px 8px;
+      background: #2d3748;
+      border: 2px solid #4a5568;
+      border-radius: 10px;
+      color: #e2e8f0;
+      font-size: 1.5rem;
+      text-align: center;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-group input:focus { border-color: #68d391; }
+
+    .buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    button {
+      padding: 12px 28px;
+      border: none;
+      border-radius: 50px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+      letter-spacing: 1px;
+    }
+
+    button:active { transform: scale(0.96); }
+    button:disabled { opacity: 0.4; cursor: default; }
+
+    #startBtn { background: #68d391; color: #1a1a2e; }
+    #pauseBtn { background: #f6ad55; color: #1a1a2e; }
+    #resetBtn { background: #4a5568; color: #e2e8f0; }
+
+    .message {
+      margin-top: 20px;
+      font-size: 1.1rem;
+      min-height: 1.5em;
+      color: #fc8181;
+      font-weight: 600;
+      letter-spacing: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Timer</h1>
+
+    <div class="progress-ring">
+      <svg width="220" height="220" viewBox="0 0 220 220">
+        <circle class="track" cx="110" cy="110" r="96"/>
+        <circle class="bar" id="progressBar" cx="110" cy="110" r="96"/>
+      </svg>
+      <div class="display-overlay">
+        <div class="display" id="display">00:00</div>
+      </div>
+    </div>
+
+    <div class="input-group">
+      <label>
+        分
+        <input type="number" id="minInput" min="0" max="99" value="5" placeholder="0">
+      </label>
+      <label>
+        秒
+        <input type="number" id="secInput" min="0" max="59" value="0" placeholder="0">
+      </label>
+    </div>
+
+    <div class="buttons">
+      <button id="startBtn">スタート</button>
+      <button id="pauseBtn" disabled>一時停止</button>
+      <button id="resetBtn">リセット</button>
+    </div>
+
+    <div class="message" id="message"></div>
+  </div>
+
+  <script>
+    const display = document.getElementById('display');
+    const progressBar = document.getElementById('progressBar');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const minInput = document.getElementById('minInput');
+    const secInput = document.getElementById('secInput');
+    const message = document.getElementById('message');
+
+    const CIRCUMFERENCE = 2 * Math.PI * 96;
+    progressBar.style.strokeDasharray = CIRCUMFERENCE;
+    progressBar.style.strokeDashoffset = 0;
+
+    let totalSeconds = 0;
+    let remaining = 0;
+    let interval = null;
+    let running = false;
+
+    function pad(n) { return String(n).padStart(2, '0'); }
+
+    function updateDisplay(secs) {
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      display.textContent = `${pad(m)}:${pad(s)}`;
+    }
+
+    function updateProgress(secs) {
+      const ratio = totalSeconds > 0 ? secs / totalSeconds : 0;
+      progressBar.style.strokeDashoffset = CIRCUMFERENCE * (1 - ratio);
+    }
+
+    function setFinished() {
+      display.className = 'display finished';
+      progressBar.classList.add('finished');
+      message.textContent = '時間です！';
+      startBtn.disabled = true;
+      pauseBtn.disabled = true;
+    }
+
+    function tick() {
+      remaining--;
+      updateDisplay(remaining);
+      updateProgress(remaining);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        interval = null;
+        running = false;
+        setFinished();
+      }
+    }
+
+    startBtn.addEventListener('click', () => {
+      if (!running) {
+        if (remaining === 0) {
+          const mins = parseInt(minInput.value) || 0;
+          const secs = parseInt(secInput.value) || 0;
+          totalSeconds = mins * 60 + secs;
+          remaining = totalSeconds;
+          if (remaining <= 0) return;
+        }
+        message.textContent = '';
+        display.className = 'display running';
+        progressBar.classList.remove('finished');
+        running = true;
+        startBtn.disabled = true;
+        pauseBtn.disabled = false;
+        minInput.disabled = true;
+        secInput.disabled = true;
+        updateDisplay(remaining);
+        updateProgress(remaining);
+        interval = setInterval(tick, 1000);
+      }
+    });
+
+    pauseBtn.addEventListener('click', () => {
+      if (running) {
+        clearInterval(interval);
+        interval = null;
+        running = false;
+        display.className = 'display';
+        startBtn.textContent = '再開';
+        startBtn.disabled = false;
+        pauseBtn.disabled = true;
+      }
+    });
+
+    resetBtn.addEventListener('click', () => {
+      clearInterval(interval);
+      interval = null;
+      running = false;
+      remaining = 0;
+      totalSeconds = 0;
+      display.textContent = '00:00';
+      display.className = 'display';
+      progressBar.classList.remove('finished');
+      progressBar.style.strokeDashoffset = 0;
+      message.textContent = '';
+      startBtn.textContent = 'スタート';
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      minInput.disabled = false;
+      secInput.disabled = false;
+    });
+  </script>
+</body>
+</html>
